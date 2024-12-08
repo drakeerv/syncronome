@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Syncronome</title>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="initial-panel" class="panel">
+        <h2>🎵 Syncronome</h2>
+        <button id="create-room">Host Room</button>
+        <div style="margin-top: 20px;">
+            <input type="text" id="room-code" placeholder="Enter Code" maxlength="6">
+            <button id="join-room">Join Room</button>
+        </div>
+    </div>
+    
+    <div id="host-panel" class="panel">
+        <div class="host-header">
+            <h3>Host Room</h3>
+            <button class="minify-btn" id="minify-room">▼</button>
+        </div>
+        <div class="room-controls" id="room-controls">
+            <div class="room-code">
+                Code: <span id="room-display"></span>
+                <button class="copy-btn" id="copy-code">Copy</button>
+            </div>
+            <div class="info">Share this code with others to join your room</div>
+            <div class="status">Connected users: <span id="user-count">0</span></div>
+            <button id="delete-room" class="leave">Delete Room</button>
+        </div>
+
+        <div class="panel-section">
+            <h3>Metronome Controls</h3>
+            <div class="metronome-display">
+                <div id="beat-indicators"></div>
+            </div>
+            <div class="controls">
+                <div class="control-group">
+                    <label>Tempo: <input type="number" id="tempo" value="120" min="30" max="240"></label>
+                    <select id="time-signature">
+                        <option value="2">2/4</option>
+                        <option value="3">3/4</option>
+                        <option value="4" selected>4/4</option>
+                        <option value="6">6/8</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <select id="subdivision">
+                        <option value="1">Quarter Notes</option>
+                        <option value="2">Eighth Notes</option>
+                        <option value="4">Sixteenth Notes</option>
+                    </select>
+                    <label><input type="checkbox" id="accent-first" checked> Accent First Beat</label>
+                </div>
+                <div class="controls-row">
+                    <button id="play-pause">Play</button>
+                    <button id="reset-metronome" class="reset-btn">Reset</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="client-panel" class="panel">
+        <div class="client-header">
+            <h3>Connected to Room</h3>
+            <div class="status">
+                <span class="connection-status" id="connection-indicator"></span>
+                <span id="sync-status">Synced</span>
+            </div>
+        </div>
+        
+        <div class="visualizer">
+            <div class="tempo-display">
+                <span id="current-tempo">120</span>
+                <span class="tempo-label">BPM</span>
+            </div>
+            <div class="metronome-display">
+                <div id="client-beat-indicators"></div>
+            </div>
+        </div>
+        
+        <div class="current-settings">
+            <div>
+                <div class="setting-label">Time Signature</div>
+                <div class="setting-value"><span id="current-time-sig">4/4</span></div>
+            </div>
+            <div>
+                <div class="setting-label">Subdivision</div>
+                <div class="setting-value"><span id="current-subdivision">Quarter Notes</span></div>
+            </div>
+        </div>
+        <button id="reset-metronome-client" class="reset-btn">Reset</button>
+        <button id="leave-room-client" class="leave">Leave Room</button>
+    </div>
+    <script src="main.js"></script>
+</body>
+</html>
