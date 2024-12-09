@@ -1,8 +1,6 @@
 class Metronome {
     constructor() {
         this.tempo = 120;
-        this.isPlaying = false;
-        this.audioContext = null; // Don't create context immediately
         this.nextNoteTime = 0;
         this.timerId = null;
         this.currentBeat = 0;
@@ -10,36 +8,46 @@ class Metronome {
         this.subdivision = 1;
         this.accentFirst = true;
         this.onBeat = null; // Callback for beat visualization
-        this.syncOffset = 0;  // Time difference between host and client
-    }
-
-    initAudio() {
-        if (!this.audioContext) {
-            this.audioContext = new AudioContext();
-        }
+        this.syncOffset = 0;  // Time difference between host and client 
+        this.soundSets = {
+            quartz: {
+                high: new Howl({
+                    src: ['assets/sounds/Perc_MetronomeQuartz_hi.ogg'],
+                    preload: true
+                }),
+                low: new Howl({
+                    src: ['assets/sounds/Perc_MetronomeQuartz_lo.ogg'],
+                    preload: true
+                })
+            },
+            musicStand: {
+                high: new Howl({
+                    src: ['assets/sounds/Perc_MusicStand_hi.ogg'],
+                    preload: true
+                }),
+                low: new Howl({
+                    src: ['assets/sounds/Perc_MusicStand_lo.ogg'],
+                    preload: true
+                })
+            }
+        };
+        this.sounds = this.soundSets.quartz; // Default sound set
+        this.currentSoundSet = 'quartz';
+        this.audioContext = { currentTime: performance.now() / 1000 }; // Mock for timing
     }
 
     scheduleNote(time, isAccent, isSubdivision) {
-        if (!this.audioContext) return;
-        const osc = this.audioContext.createOscillator();
-        const gainNode = this.audioContext.createGain();
+        const now = this.getCurrentTime();
+        const delay = Math.max(0, (time - now) * 1000); // Convert to milliseconds
         
-        osc.connect(gainNode);
-        gainNode.connect(this.audioContext.destination);
-        
-        if (isAccent) {
-            osc.frequency.value = 880; // High pitch for accent
-            gainNode.gain.value = 0.8;
-        } else if (isSubdivision) {
-            osc.frequency.value = 330; // Lower pitch for subdivisions
-            gainNode.gain.value = 0.3;
-        } else {
-            osc.frequency.value = 440; // Normal pitch for main beats
-            gainNode.gain.value = 0.5;
-        }
-        
-        osc.start(time);
-        osc.stop(time + 0.05);
+        setTimeout(() => {
+            if (isAccent) {
+                this.sounds.high.play();
+            } else {
+                this.sounds.low.volume(isSubdivision ? 0.6 : 1);
+                this.sounds.low.play();
+            }
+        }, delay);
     }
 
     nextNote() {
@@ -89,32 +97,28 @@ class Metronome {
     }
 
     start() {
-        if (this.isPlaying) return;
-        if (!this.audioContext) this.initAudio();
-        this.isPlaying = true;
-        this.nextNoteTime = this.audioContext.currentTime;
+        if (this.timerId) return;
+        this.currentBeat = 0;  // Reset beat count before starting
+        this.nextNoteTime = this.getCurrentTime();  // Use getCurrentTime instead of audioContext
+        if (this.onBeat) {
+            this.onBeat(0);  // Reset visualization
+        }
         this.scheduler();
     }
 
     stop() {
-        if (!this.isPlaying) return;
-        this.isPlaying = false;
-        clearTimeout(this.timerId);
+        if (this.timerId) {
+            clearTimeout(this.timerId);
+            this.timerId = null;
+            this.currentBeat = 0;  // Reset beat count when stopping
+            if (this.onBeat) {
+                this.onBeat(0);    // Update visualization
+            }
+        }
     }
 
     setTempo(newTempo) {
         this.tempo = newTempo;
-    }
-    
-    reset() {
-        this.stop();
-        this.currentBeat = 0;
-        this.nextNoteTime = 0;
-        if (this.onBeat) {
-            this.onBeat(0);
-        }
-        // Update play button state
-        document.getElementById('play-pause').textContent = 'Play';
     }
 
     setSyncOffset(offset, hostNextNoteTime) {
@@ -133,7 +137,8 @@ class Metronome {
             nextNoteTime: this.nextNoteTime,
             currentBeat: this.currentBeat,
             tempo: this.tempo,
-            isPlaying: this.isPlaying
+            isPlaying: !!this.timerId, // Convert to boolean
+            soundSet: this.currentSoundSet // Add sound set to state
         };
     }
 
@@ -143,7 +148,14 @@ class Metronome {
     }
 
     getCurrentTime() {
-        return this.audioContext?.currentTime ?? 0;
+        return performance.now() / 1000;
+    }
+
+    setSound(soundSet) {
+        if (this.soundSets[soundSet]) {
+            this.sounds = this.soundSets[soundSet];
+            this.currentSoundSet = soundSet;
+        }
     }
 }
 
@@ -211,7 +223,6 @@ document.getElementById('copy-code').addEventListener('click', async () => {
 
 document.getElementById('create-room').addEventListener('click', () => {
     isRoomOwner = true;
-    metronome.initAudio();
     showPanel('host-panel');
     createBeatIndicators('beat-indicators', metronome.beatsPerBar);
 });
@@ -223,7 +234,6 @@ document.getElementById('join-room').addEventListener('click', () => {
         return;
     }
     
-    metronome.initAudio();
     
     if (disconnectTimeout) {
         clearTimeout(disconnectTimeout);
@@ -263,9 +273,6 @@ document.getElementById('join-room').addEventListener('click', () => {
                     metronome.stop();
                     updateConnectionStatus('connected');
                 }
-            } else if (data.type === 'reset') {
-                metronome.reset();
-                document.getElementById('play-pause').textContent = 'Play';
             } else if (data.type === 'syncRequest') {
                 // Host receives sync request
                 conn.send({
@@ -288,6 +295,13 @@ document.getElementById('join-room').addEventListener('click', () => {
                     const projectedNextNoteTime = hostState.nextNoteTime + elapsedTime;
                     metronome.setSyncOffset(estimatedOffset, projectedNextNoteTime);
                 }
+            } else if (data.type === 'sound') {
+                metronome.setSound(data.value);
+                const soundNames = {
+                    quartz: 'Quartz Click',
+                    musicStand: 'Music Stand'
+                };
+                document.getElementById('current-sound').textContent = soundNames[data.value];
             }
         });
         startPeriodicSync();
@@ -319,7 +333,7 @@ function leaveRoom() {
         clientConnection = null;
     }
     isRoomOwner = false;
-    document.getElementById('play-pause').textContent = 'Play';
+    document.getElementById('play-pause').textContent = 'Start';
     document.getElementById('sync-status').textContent = 'Synced';
     document.getElementById('room-code').value = '';
     showPanel('initial-panel');
@@ -346,6 +360,7 @@ peer.on('connection', (conn) => {
     conn.send({ type: 'timeSignature', value: metronome.beatsPerBar });
     conn.send({ type: 'subdivision', value: metronome.subdivision });
     conn.send({ type: 'accent', value: metronome.accentFirst });
+    conn.send({ type: 'sound', value: metronome.currentSoundSet });
     
     conn.on('close', () => {
         connections = connections.filter(c => c !== conn);
@@ -373,16 +388,16 @@ document.getElementById('tempo').addEventListener('input', (e) => {
 
 document.getElementById('play-pause').addEventListener('click', (e) => {
     if (!isRoomOwner) return;
-    if (metronome.isPlaying) {
+    if (metronome.timerId) {
         metronome.stop();
-        e.target.textContent = 'Play';
+        e.target.textContent = 'Start';
     } else {
         metronome.start();
-        e.target.textContent = 'Pause';
+        e.target.textContent = 'Stop';
     }
     
     connections.forEach(conn => {
-        conn.send({ type: 'playState', value: metronome.isPlaying });
+        conn.send({ type: 'playState', value: !!metronome.timerId });
     });
 });
 
@@ -478,47 +493,12 @@ function updateConnectionStatus(status) {
     }
 }
 
-document.getElementById('reset-metronome').addEventListener('click', () => {
+// ...existing code...
+document.getElementById('sound-select').addEventListener('change', (e) => {
     if (!isRoomOwner) return;
-    metronome.reset();
+    const soundSet = e.target.value;
+    metronome.setSound(soundSet);
     connections.forEach(conn => {
-        conn.send({ type: 'reset' });
+        conn.send({ type: 'sound', value: soundSet });
     });
 });
-
-document.getElementById('reset-metronome-client').addEventListener('click', () => {
-    if (clientConnection) {
-        metronome.reset();
-    }
-});
-
-// Add sync functionality
-function syncWithHost() {
-    if (!isRoomOwner && clientConnection) {
-        clientConnection.send({ 
-            type: 'syncRequest', 
-            clientTime: metronome.getCurrentTime(),
-            isPlaying: metronome.isPlaying
-        });
-    }
-}
-
-// Add periodic sync
-function startPeriodicSync() {
-    if (!isRoomOwner && clientConnection) {
-        const sync = () => {
-            updateConnectionStatus('syncing');
-            syncWithHost();
-            setTimeout(() => {
-                if (metronome.isPlaying) {
-                    updateConnectionStatus('playing');
-                } else {
-                    updateConnectionStatus('connected');
-                }
-            }, 500);
-        };
-        
-        sync(); // Initial sync
-        setInterval(sync, 5000);
-    }
-}

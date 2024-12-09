@@ -3,8 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Syncronome</title>
-    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    
+    <!-- Primary Meta Tags -->
+    <title>Syncronome - Shared Online Metronome</title>
+    <meta name="title" content="Syncronome - Shared Online Metronome">
+    <meta name="description" content="A synchronized online metronome for remote music practice and collaboration">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://syncronome.drakeerv.com/">
+    <meta property="og:title" content="Syncronome - Shared Online Metronome">
+    <meta property="og:description" content="A synchronized online metronome for remote music practice and collaboration">
+    <meta property="og:image" content="assets/images/og-image.png">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://syncronome.drakeerv.com/">
+    <meta property="twitter:title" content="Syncronome - Shared Online Metronome">
+    <meta property="twitter:description" content="A synchronized online metronome for remote music practice and collaboration">
+    <meta property="twitter:image" content="assets/images/og-image.png">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js" integrity="sha512-iFU+yF1keEaLDC9HEwPfLMSRaS0unBHE14GEgx6pQKJXjp5v0tvX8xpfp2lgJ62XEjbYp/M5C3CAmej/PWXMyA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js" integrity="sha512-xi/RZRIF/S0hJ+yJJYuZ5yk6/8pCiRlEXZzoguSMl+vk2i3m6UjUO/WcZ11blRL/O+rnj94JRGwt/CHbc9+6EA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,7 +32,12 @@
         <h2>🎵 Syncronome</h2>
         <button id="create-room">Host Room</button>
         <div style="margin-top: 20px;">
-            <input type="text" id="room-code" placeholder="Enter Code" maxlength="6">
+            <input type="tel" 
+                   id="room-code" 
+                   placeholder="Enter Code" 
+                   maxlength="6" 
+                   pattern="[0-9]*" 
+                   inputmode="numeric">
             <button id="join-room">Join Room</button>
         </div>
     </div>
@@ -53,11 +78,17 @@
                         <option value="2">Eighth Notes</option>
                         <option value="4">Sixteenth Notes</option>
                     </select>
-                    <label><input type="checkbox" id="accent-first" checked> Accent First Beat</label>
+                    <select id="sound-select">
+                        <option value="quartz">Quartz Click</option>
+                        <option value="musicStand">Music Stand</option>
+                    </select>
+                </div>
+                <div class="control-group accent-control">
+                    <input type="checkbox" id="accent-first" checked>
+                    <label for="accent-first">Accent First Beat</label>
                 </div>
                 <div class="controls-row">
                     <button id="play-pause">Play</button>
-                    <button id="reset-metronome" class="reset-btn">Reset</button>
                 </div>
             </div>
         </div>
@@ -91,8 +122,11 @@
                 <div class="setting-label">Subdivision</div>
                 <div class="setting-value"><span id="current-subdivision">Quarter Notes</span></div>
             </div>
+            <div>
+                <div class="setting-label">Sound Type</div>
+                <div class="setting-value"><span id="current-sound">Quartz Click</span></div>
+            </div>
         </div>
-        <button id="reset-metronome-client" class="reset-btn">Reset</button>
         <button id="leave-room-client" class="leave">Leave Room</button>
     </div>
     <script src="main.js"></script>

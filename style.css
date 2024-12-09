@@ -1,9 +1,54 @@
-
 :root {
     --primary: #4CAF50;
     --danger: #f44336;
     --dark: #2c3e50;
     --light: #ecf0f1;
+    --bg: #f5f6fa;
+    --panel-bg: white;
+    --text: var(--dark);
+    --border: #ddd;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #1a1a1a;
+        --panel-bg: #2d2d2d;
+        --text: #ecf0f1;
+        --light: #3d3d3d;
+        --dark: #ecf0f1;
+        --border: #404040;  /* Darker border for unselected state */
+    }
+
+    .beat-indicator {
+        background: #404040;
+    }
+
+    input, select {
+        background: var(--light);
+        color: var(--text);
+        border-color: var(--border);
+    }
+
+    input:focus, select:focus {
+        border-color: var(--primary);
+    }
+
+    select option {
+        background: var(--panel-bg);
+        color: var(--text);
+    }
+
+    .panel {
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+
+    .info { 
+        color: #999; 
+    }
+
+    .setting-label {
+        color: #999;
+    }
 }
 
 body { 
@@ -11,12 +56,12 @@ body {
     max-width: 600px;
     margin: 40px auto;
     text-align: center;
-    background: #f5f6fa;
-    color: var(--dark);
+    background: var(--bg);
+    color: var(--text);
 }
 
 .panel {
-    background: white;
+    background: var(--panel-bg);
     margin: 20px 0;
     padding: 30px;
     border-radius: 12px;
@@ -44,11 +89,11 @@ button {
 
 button:hover { transform: translateY(-2px); }
 
-input {
+input, select {
     margin: 5px;
     padding: 10px;
     width: 120px;
-    border: 2px solid #ddd;
+    border: 2px solid var(--border); /* Replace #ddd with variable */
     border-radius: 6px;
     font-size: 16px;
     text-align: center;
@@ -57,6 +102,18 @@ input {
 input:focus {
     outline: none;
     border-color: var(--primary);
+}
+
+select {
+    text-align: left;  /* Override center alignment for selects */
+    appearance: none;  /* Remove default dropdown arrow */
+    background: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'%3E%3Cpath fill='%23666' d='M7 10l5 5 5-5H7z'/%3E%3C/svg%3E") no-repeat right 8px center; /* Custom dropdown arrow */
+    padding-right: 30px; /* Space for custom arrow */
+}
+
+select#subdivision,
+select#sound-select {
+    min-width: 160px;  /* Increase width for better text visibility */
 }
 
 .room-code {
@@ -113,17 +170,8 @@ h2, h3 {
     align-items: center;
 }
 
-select {
-    padding: 8px;
-    border: 2px solid #ddd;
-    border-radius: 6px;
-    font-size: 16px;
-    background: white;
-}
-
-select:focus {
-    outline: none;
-    border-color: var(--primary);
+.control-group select {
+    min-width: 120px;
 }
 
 .panel-section {
@@ -185,7 +233,7 @@ select:focus {
 
 .current-settings {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 10px;
     margin: 20px 0;
     text-align: left;
@@ -272,15 +320,29 @@ select:focus {
     100% { transform: scale(1); }
 }
 
-.reset-btn {
-    background: #95a5a6;
-    font-size: 16px;
-    padding: 10px 20px;
-}
-
 .controls-row {
     display: flex;
     gap: 10px;
     justify-content: center;
     align-items: center;
+}
+
+.accent-control {
+    background: var(--light);
+    padding: 8px 15px;
+    border-radius: 6px;
+    gap: 8px;
+}
+
+.accent-control input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--primary);
+}
+
+.accent-control label {
+    cursor: pointer;
+    user-select: none;
 }
