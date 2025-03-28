@@ -7,8 +7,8 @@ class Metronome {
         this.beatsPerBar = 4;
         this.subdivision = 1;
         this.accentFirst = true;
-        this.onBeat = null; // Callback for beat visualization
-        this.syncOffset = 0;  // Time difference between host and client 
+        this.onBeat = null;
+        this.syncOffset = 0;
         this.soundSets = {
             quartz: {
                 high: new Howl({
@@ -164,6 +164,9 @@ let connections = [];
 let isRoomOwner = false;
 let clientConnection = null; 
 let disconnectTimeout = null;
+let connectionTimeout = null; // Add timeout for connection attempts
+let connectionAttempts = 0;   // Track connection attempts
+const MAX_CONNECTION_ATTEMPTS = 3;
 
 // Check if browser supports required WebRTC features
 function checkWebRTCSupport() {
@@ -187,16 +190,36 @@ function generateRoomCode() {
 const roomCode = generateRoomCode();
 let peer = null;
 
-// Initialize PeerJS with proper configuration for cross-platform support
+// Initialize PeerJS with enhanced configuration for cross-platform and cross-network support
 function initializePeer(id) {
     try {
+        // Enhanced configuration with multiple STUN/TURN servers for better connectivity
         const peerOptions = {
             debug: 2,
             config: {
-                'iceServers': [
+                iceServers: [
+                    // Google's public STUN servers
                     { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:global.stun.twilio.com:3478' }
-                ]
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' },
+                    { urls: 'stun:stun4.l.google.com:19302' },
+                    // Twilio's STUN server
+                    { urls: 'stun:global.stun.twilio.com:3478' },
+                    // Public TURN servers (you may want to replace these with your own private TURN servers)
+                    {
+                        urls: 'turn:numb.viagenie.ca',
+                        username: 'webrtc@live.com',
+                        credential: 'muazkh'
+                    },
+                    {
+                        urls: 'turn:turn.anyfirewall.com:443?transport=tcp',
+                        username: 'webrtc',
+                        credential: 'webrtc'
+                    }
+                ],
+                // Force ICE trickling for better connection success
+                iceCandidatePoolSize: 10
             }
         };
         
@@ -220,6 +243,7 @@ function initializePeer(id) {
 
 function setupPeerEvents() {
     peer.on('open', (id) => {
+        console.log('PeerJS connection opened with ID:', id);
         document.getElementById('room-display').textContent = id;
     });
     
@@ -234,12 +258,45 @@ function setupPeerEvents() {
             errorMessage = 'Network error. Please check your connection.';
         } else if (err.type === 'browser-incompatible') {
             errorMessage = 'Your browser may not fully support WebRTC.';
+        } else if (err.type === 'disconnected') {
+            errorMessage = 'Disconnected from signaling server. Trying to reconnect...';
+            // Try to reconnect
+            if (peer && !peer.destroyed) {
+                peer.reconnect();
+            }
+        } else if (err.type === 'server-error') {
+            errorMessage = 'PeerJS server error. Please try again later.';
+        } else if (err.type === 'unavailable-id') {
+            // Generate a new ID if our ID is taken
+            const newId = generateRoomCode();
+            peer.disconnect();
+            peer.destroy();
+            setTimeout(() => initializePeer(newId), 500);
+            errorMessage = 'Room ID already in use. Getting a new room code...';
         }
         
         showError(errorMessage);
     });
     
     peer.on('connection', handleIncomingConnection);
+    
+    // Additional event handlers for better state tracking
+    peer.on('disconnected', () => {
+        console.log('PeerJS disconnected from server');
+        if (peer && !peer.destroyed) {
+            // Try to reconnect automatically
+            setTimeout(() => peer.reconnect(), 3000);
+        }
+    });
+    
+    peer.on('close', () => {
+        console.log('PeerJS connection closed');
+        // Clean up if needed
+        if (connectionTimeout) {
+            clearTimeout(connectionTimeout);
+            connectionTimeout = null;
+        }
+    });
 }
 
 function showError(message) {
@@ -340,27 +397,88 @@ document.getElementById('join-room').addEventListener('click', () => {
         disconnectTimeout = null;
     }
     
+    if (connectionTimeout) {
+        clearTimeout(connectionTimeout);
+    }
+    
+    // Show connecting status
+    updateConnectionStatus('connecting');
+    showError('Connecting to room...');
+    
     try {
-        const conn = peer.connect(roomCodeInput, { reliable: true });
+        console.log('Attempting to connect to peer:', roomCodeInput);
+        const conn = peer.connect(roomCodeInput, {
+            reliable: true,
+            serialization: 'json',
+            // Debug data
+            metadata: {
+                clientId: peer.id,
+                userAgent: navigator.userAgent,
+                timestamp: Date.now()
+            }
+        });
+        
+        // Set connection timeout - if we don't get "open" event in 15 seconds, retry or fail
+        connectionTimeout = setTimeout(() => {
+            if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
+                connectionAttempts++;
+                showError(`Connection attempt ${connectionAttempts} timed out. Retrying...`);
+                
+                // Close any existing connection
+                if (conn) conn.close();
+                
+                // Try again
+                document.getElementById('join-room').click();
+            } else {
+                showError('Could not connect to the room after multiple attempts. Please check your network connection or try a different room code.');
+                updateConnectionStatus('disconnected');
+                connectionAttempts = 0;
+            }
+        }, 15000);
+        
         clientConnection = conn;
         
+        // Log connection events for debugging
         conn.on('open', () => {
+            console.log('Connection opened with host:', conn.peer);
+            clearTimeout(connectionTimeout);
+            connectionTimeout = null;
+            connectionAttempts = 0;
             showPanel('client-panel');
             updateConnectionStatus('connected');
             createBeatIndicators('client-beat-indicators', 4);
             
-            conn.on('data', handleClientData);
+            // Send a ping to confirm two-way communication
+            conn.send({ type: 'ping', timestamp: Date.now() });
+            
+            conn.on('data', (data) => {
+                console.log('Received data from host:', data.type);
+                if (data.type === 'pong') {
+                    console.log('Received pong - connection confirmed');
+                } else {
+                    handleClientData(data);
+                }
+            });
         });
 
-        conn.on('close', handleClientDisconnect);
+        conn.on('close', () => {
+            console.log('Connection closed with host');
+            handleClientDisconnect();
+        });
+        
         conn.on('error', (err) => {
             console.error('Connection error:', err);
             handleClientDisconnect();
         });
         
+        conn.on('iceStateChanged', (state) => {
+            console.log('ICE state changed:', state);
+        });
+        
     } catch (error) {
         console.error('Failed to connect:', error);
         showError('Failed to join room. Please try again.');
+        updateConnectionStatus('disconnected');
     }
 });
 
@@ -391,6 +509,8 @@ document.getElementById('delete-room').addEventListener('click', leaveRoom);
 document.getElementById('leave-room-client').addEventListener('click', leaveRoom);
 
 function handleIncomingConnection(conn) {
+    console.log('Received connection from:', conn.peer, 'with metadata:', conn.metadata);
+    
     // Clean up any existing connections with the same peer
     const existingConn = connections.find(c => c.peer === conn.peer);
     if (existingConn) {
@@ -401,6 +521,22 @@ function handleIncomingConnection(conn) {
     connections.push(conn);
     document.getElementById('user-count').textContent = connections.length;
     
+    // Set up error handler
+    conn.on('error', (err) => {
+        console.error('Connection error with client:', err);
+        // Remove the connection on error
+        connections = connections.filter(c => c !== conn);
+        document.getElementById('user-count').textContent = connections.length;
+    });
+    
+    // Handle ping/pong for connection validation
+    conn.on('data', (data) => {
+        if (data.type === 'ping') {
+            // Respond to ping to confirm connection
+            conn.send({ type: 'pong', timestamp: Date.now() });
+        }
+    });
+    
     // Send current state to new connection
     conn.send({ type: 'tempo', value: metronome.tempo });
     conn.send({ type: 'playState', value: !!metronome.timerId });
@@ -410,6 +546,7 @@ function handleIncomingConnection(conn) {
     conn.send({ type: 'sound', value: metronome.currentSoundSet });
     
     conn.on('close', () => {
+        console.log('Client disconnected:', conn.peer);
         connections = connections.filter(c => c !== conn);
         document.getElementById('user-count').textContent = connections.length;
     });
@@ -425,6 +562,9 @@ function handleIncomingConnection(conn) {
 }
 
 function handleClientData(data) {
+    // Fix the scope issue - clientConnection should be used instead of conn
+    const conn = clientConnection;
+
     if (data.type === 'tempo') {
         metronome.setTempo(data.value);
         document.getElementById('current-tempo').textContent = data.value;
@@ -450,13 +590,15 @@ function handleClientData(data) {
             updateConnectionStatus('connected');
         }
     } else if (data.type === 'syncRequest') {
-        // Host receives sync request
-        conn.send({
-            type: 'syncResponse',
-            hostTime: metronome.getCurrentTime(),
-            clientTime: data.clientTime,
-            metronomeState: metronome.getState()
-        });
+        // Host receives sync request - make sure we use the right connection object
+        if (conn) {
+            conn.send({
+                type: 'syncResponse',
+                hostTime: metronome.getCurrentTime(),
+                clientTime: data.clientTime,
+                metronomeState: metronome.getState()
+            });
+        }
     } else if (data.type === 'syncResponse') {
         // Client receives sync response
         const now = metronome.getCurrentTime();
@@ -484,10 +626,43 @@ function handleClientData(data) {
 function handleClientDisconnect() {
     metronome.stop();
     updateConnectionStatus('disconnected');
+    
+    if (connectionTimeout) {
+        clearTimeout(connectionTimeout);
+        connectionTimeout = null;
+    }
+    
     disconnectTimeout = setTimeout(() => {
         showPanel('initial-panel');
         clientConnection = null;
     }, 2000);
+}
+
+// Function to attempt periodic sync with the host
+function startPeriodicSync() {
+    if (!clientConnection || isRoomOwner) return;
+    
+    // Request time sync from host every 30 seconds
+    setInterval(() => {
+        if (clientConnection && clientConnection.open) {
+            updateConnectionStatus('syncing');
+            clientConnection.send({
+                type: 'syncRequest',
+                clientTime: metronome.getCurrentTime()
+            });
+            
+            // Reset back to connected status if no sync response received
+            setTimeout(() => {
+                if (document.getElementById('sync-status').textContent === 'Syncing...') {
+                    if (metronome.timerId) {
+                        updateConnectionStatus('playing');
+                    } else {
+                        updateConnectionStatus('connected');
+                    }
+                }
+            }, 2000);
+        }
+    }, 30000);
 }
 
 document.getElementById('tempo').addEventListener('input', (e) => {
@@ -582,6 +757,10 @@ function updateConnectionStatus(status) {
     
     indicator.className = 'connection-status';
     switch(status) {
+        case 'connecting':
+            indicator.classList.add('connecting');
+            statusText.textContent = 'Connecting...';
+            break;
         case 'connected':
             indicator.classList.add('connected');
             statusText.textContent = 'Connected';

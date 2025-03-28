@@ -312,7 +312,17 @@ h2, h3 {
 
 .connection-status.connected { background: var(--primary); }
 .connection-status.disconnected { background: var(--danger); }
+.connection-status.connecting { 
+    background: #ff9800; 
+    animation: blink 1s infinite;
+}
 .connection-status.playing { animation: pulse 1s infinite; }
+
+@keyframes blink {
+    0% { opacity: 0.4; }
+    50% { opacity: 1; }
+    100% { opacity: 0.4; }
+}
 
 @keyframes pulse {
     0% { transform: scale(1); }
@@ -385,4 +395,25 @@ h2, h3 {
         -webkit-appearance: none;
         border-radius: 0;
     }
+}
+
+/* Debug information panel for connection troubleshooting */
+.debug-info {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    background: rgba(0,0,0,0.8);
+    color: #00ff00;
+    font-family: monospace;
+    padding: 10px;
+    font-size: 12px;
+    max-width: 300px;
+    max-height: 200px;
+    overflow: auto;
+    z-index: 1000;
+    display: none;
+}
+
+.debug-info.active {
+    display: block;
 }
