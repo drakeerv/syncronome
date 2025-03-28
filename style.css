@@ -346,3 +346,43 @@ h2, h3 {
     cursor: pointer;
     user-select: none;
 }
+
+.error-banner {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background-color: #ff5252;
+    color: white;
+    padding: 10px;
+    text-align: center;
+    z-index: 1000;
+    font-weight: bold;
+    animation: fadeInOut 0.5s ease-in-out;
+}
+
+.browser-info {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 20px;
+}
+
+@keyframes fadeInOut {
+    0% { opacity: 0; transform: translateY(-20px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Mobile optimizations for iOS */
+@supports (-webkit-touch-callout: none) {
+    /* iOS specific styles */
+    button, input, select {
+        font-size: 16px; /* Prevents iOS zoom on input */
+    }
+    
+    input[type="tel"] {
+        font-size: 16px;
+        -webkit-appearance: none;
+        border-radius: 0;
+    }
+}

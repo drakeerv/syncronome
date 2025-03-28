@@ -162,15 +162,100 @@ class Metronome {
 const metronome = new Metronome();
 let connections = [];
 let isRoomOwner = false;
-let clientConnection = null; // Add at the top with other variables
+let clientConnection = null; 
 let disconnectTimeout = null;
+
+// Check if browser supports required WebRTC features
+function checkWebRTCSupport() {
+    return !!(navigator.mediaDevices && 
+              window.RTCPeerConnection && 
+              window.RTCSessionDescription);
+}
+
+// Check if we're in a secure context (HTTPS or localhost)
+function isSecureContext() {
+    return window.isSecureContext || 
+           location.protocol === 'https:' || 
+           location.hostname === 'localhost' ||
+           location.hostname === '127.0.0.1';
+}
 
 function generateRoomCode() {
     return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 const roomCode = generateRoomCode();
-const peer = new Peer(roomCode);
+let peer = null;
+
+// Initialize PeerJS with proper configuration for cross-platform support
+function initializePeer(id) {
+    try {
+        const peerOptions = {
+            debug: 2,
+            config: {
+                'iceServers': [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:global.stun.twilio.com:3478' }
+                ]
+            }
+        };
+        
+        // If running on a secure connection, use the default PeerJS server
+        if (isSecureContext()) {
+            peer = new Peer(id, peerOptions);
+        } else {
+            // Otherwise show an error - WebRTC requires secure context on iOS
+            showError('This app requires HTTPS to work properly on iOS devices.');
+            return false;
+        }
+        
+        setupPeerEvents();
+        return true;
+    } catch (error) {
+        console.error('PeerJS initialization error:', error);
+        showError('Failed to initialize connection. Please try again.');
+        return false;
+    }
+}
+
+function setupPeerEvents() {
+    peer.on('open', (id) => {
+        document.getElementById('room-display').textContent = id;
+    });
+    
+    peer.on('error', (err) => {
+        console.error('PeerJS error:', err);
+        let errorMessage = 'Connection error';
+        
+        // Provide more specific error messages based on error type
+        if (err.type === 'peer-unavailable') {
+            errorMessage = 'Room not found. Please check the code and try again.';
+        } else if (err.type === 'network') {
+            errorMessage = 'Network error. Please check your connection.';
+        } else if (err.type === 'browser-incompatible') {
+            errorMessage = 'Your browser may not fully support WebRTC.';
+        }
+        
+        showError(errorMessage);
+    });
+    
+    peer.on('connection', handleIncomingConnection);
+}
+
+function showError(message) {
+    const errorElement = document.getElementById('error-message');
+    if (errorElement) {
+        errorElement.textContent = message;
+        errorElement.style.display = 'block';
+        
+        // Hide after 5 seconds
+        setTimeout(() => {
+            errorElement.style.display = 'none';
+        }, 5000);
+    } else {
+        alert(message);
+    }
+}
 
 function showPanel(panelId) {
     ['initial-panel', 'host-panel', 'client-panel'].forEach(id => {
@@ -188,8 +273,13 @@ function showPanel(panelId) {
     }
 }
 
-peer.on('open', (id) => {
-    document.getElementById('room-display').textContent = id;
+document.addEventListener('DOMContentLoaded', () => {
+    // Initialize when page loads
+    if (checkWebRTCSupport()) {
+        initializePeer(roomCode);
+    } else {
+        showError('Your browser doesn\'t support WebRTC, which is required for this app.');
+    }
 });
 
 document.getElementById('copy-code').addEventListener('click', async () => {
@@ -222,99 +312,56 @@ document.getElementById('copy-code').addEventListener('click', async () => {
 });
 
 document.getElementById('create-room').addEventListener('click', () => {
+    if (!peer) {
+        if (!initializePeer(roomCode)) {
+            return;
+        }
+    }
     isRoomOwner = true;
     showPanel('host-panel');
     createBeatIndicators('beat-indicators', metronome.beatsPerBar);
 });
 
 document.getElementById('join-room').addEventListener('click', () => {
-    const roomCode = document.getElementById('room-code').value;
-    if (!roomCode || roomCode.length !== 6 || isNaN(roomCode)) {
-        alert('Please enter a valid 6-digit room code');
+    const roomCodeInput = document.getElementById('room-code').value;
+    if (!roomCodeInput || roomCodeInput.length !== 6 || isNaN(roomCodeInput)) {
+        showError('Please enter a valid 6-digit room code');
         return;
     }
     
+    if (!peer) {
+        if (!initializePeer()) {
+            return;
+        }
+    }
     
     if (disconnectTimeout) {
         clearTimeout(disconnectTimeout);
         disconnectTimeout = null;
     }
     
-    const conn = peer.connect(roomCode);
-    clientConnection = conn; // Store connection reference
-    
-    conn.on('open', () => {
-        showPanel('client-panel');
-        updateConnectionStatus('connected');
-        createBeatIndicators('client-beat-indicators', 4); // Default to 4/4
+    try {
+        const conn = peer.connect(roomCodeInput, { reliable: true });
+        clientConnection = conn;
         
-        conn.on('data', (data) => {
-            if (data.type === 'tempo') {
-                metronome.setTempo(data.value);
-                document.getElementById('current-tempo').textContent = data.value;
-            } else if (data.type === 'timeSignature') {
-                metronome.setTimeSignature(data.value);
-                document.getElementById('time-signature').value = data.value;
-                document.getElementById('current-time-sig').textContent = `${data.value}/4`;
-                createBeatIndicators('client-beat-indicators', data.value);
-            } else if (data.type === 'subdivision') {
-                metronome.setSubdivision(data.value);
-                document.getElementById('subdivision').value = data.value;
-                const subdivText = {1: 'Quarter Notes', 2: 'Eighth Notes', 4: 'Sixteenth Notes'}[data.value];
-                document.getElementById('current-subdivision').textContent = subdivText;
-            } else if (data.type === 'accent') {
-                metronome.setAccent(data.value);
-                document.getElementById('accent-first').checked = data.value;
-            } else if (data.type === 'playState') {
-                if (data.value) {
-                    metronome.start();
-                    updateConnectionStatus('playing');
-                } else {
-                    metronome.stop();
-                    updateConnectionStatus('connected');
-                }
-            } else if (data.type === 'syncRequest') {
-                // Host receives sync request
-                conn.send({
-                    type: 'syncResponse',
-                    hostTime: metronome.getCurrentTime(),
-                    clientTime: data.clientTime,
-                    metronomeState: metronome.getState()
-                });
-            } else if (data.type === 'syncResponse') {
-                // Client receives sync response
-                const now = metronome.getCurrentTime();
-                const roundTripTime = now - data.clientTime;
-                const estimatedOffset = data.hostTime + (roundTripTime / 2) - now;
-                
-                // Sync with host's metronome state
-                const hostState = data.metronomeState;
-                if (hostState.isPlaying) {
-                    // Calculate the projected nextNoteTime based on host's state
-                    const elapsedTime = now - (data.hostTime - roundTripTime/2);
-                    const projectedNextNoteTime = hostState.nextNoteTime + elapsedTime;
-                    metronome.setSyncOffset(estimatedOffset, projectedNextNoteTime);
-                }
-            } else if (data.type === 'sound') {
-                metronome.setSound(data.value);
-                const soundNames = {
-                    quartz: 'Quartz Click',
-                    musicStand: 'Music Stand'
-                };
-                document.getElementById('current-sound').textContent = soundNames[data.value];
-            }
+        conn.on('open', () => {
+            showPanel('client-panel');
+            updateConnectionStatus('connected');
+            createBeatIndicators('client-beat-indicators', 4);
+            
+            conn.on('data', handleClientData);
         });
-        startPeriodicSync();
-    });
 
-    conn.on('close', () => {
-        metronome.stop();
-        updateConnectionStatus('disconnected');
-        disconnectTimeout = setTimeout(() => {
-            showPanel('initial-panel');
-            clientConnection = null;
-        }, 2000);
-    });
+        conn.on('close', handleClientDisconnect);
+        conn.on('error', (err) => {
+            console.error('Connection error:', err);
+            handleClientDisconnect();
+        });
+        
+    } catch (error) {
+        console.error('Failed to connect:', error);
+        showError('Failed to join room. Please try again.');
+    }
 });
 
 function leaveRoom() {
@@ -343,7 +390,7 @@ function leaveRoom() {
 document.getElementById('delete-room').addEventListener('click', leaveRoom);
 document.getElementById('leave-room-client').addEventListener('click', leaveRoom);
 
-peer.on('connection', (conn) => {
+function handleIncomingConnection(conn) {
     // Clean up any existing connections with the same peer
     const existingConn = connections.find(c => c.peer === conn.peer);
     if (existingConn) {
@@ -356,7 +403,7 @@ peer.on('connection', (conn) => {
     
     // Send current state to new connection
     conn.send({ type: 'tempo', value: metronome.tempo });
-    conn.send({ type: 'playState', value: metronome.isPlaying });
+    conn.send({ type: 'playState', value: !!metronome.timerId });
     conn.send({ type: 'timeSignature', value: metronome.beatsPerBar });
     conn.send({ type: 'subdivision', value: metronome.subdivision });
     conn.send({ type: 'accent', value: metronome.accentFirst });
@@ -375,7 +422,73 @@ peer.on('connection', (conn) => {
             nextNoteTime: metronome.nextNoteTime
         });
     }
-});
+}
+
+function handleClientData(data) {
+    if (data.type === 'tempo') {
+        metronome.setTempo(data.value);
+        document.getElementById('current-tempo').textContent = data.value;
+    } else if (data.type === 'timeSignature') {
+        metronome.setTimeSignature(data.value);
+        document.getElementById('time-signature').value = data.value;
+        document.getElementById('current-time-sig').textContent = `${data.value}/4`;
+        createBeatIndicators('client-beat-indicators', data.value);
+    } else if (data.type === 'subdivision') {
+        metronome.setSubdivision(data.value);
+        document.getElementById('subdivision').value = data.value;
+        const subdivText = {1: 'Quarter Notes', 2: 'Eighth Notes', 4: 'Sixteenth Notes'}[data.value];
+        document.getElementById('current-subdivision').textContent = subdivText;
+    } else if (data.type === 'accent') {
+        metronome.setAccent(data.value);
+        document.getElementById('accent-first').checked = data.value;
+    } else if (data.type === 'playState') {
+        if (data.value) {
+            metronome.start();
+            updateConnectionStatus('playing');
+        } else {
+            metronome.stop();
+            updateConnectionStatus('connected');
+        }
+    } else if (data.type === 'syncRequest') {
+        // Host receives sync request
+        conn.send({
+            type: 'syncResponse',
+            hostTime: metronome.getCurrentTime(),
+            clientTime: data.clientTime,
+            metronomeState: metronome.getState()
+        });
+    } else if (data.type === 'syncResponse') {
+        // Client receives sync response
+        const now = metronome.getCurrentTime();
+        const roundTripTime = now - data.clientTime;
+        const estimatedOffset = data.hostTime + (roundTripTime / 2) - now;
+        
+        // Sync with host's metronome state
+        const hostState = data.metronomeState;
+        if (hostState.isPlaying) {
+            // Calculate the projected nextNoteTime based on host's state
+            const elapsedTime = now - (data.hostTime - roundTripTime/2);
+            const projectedNextNoteTime = hostState.nextNoteTime + elapsedTime;
+            metronome.setSyncOffset(estimatedOffset, projectedNextNoteTime);
+        }
+    } else if (data.type === 'sound') {
+        metronome.setSound(data.value);
+        const soundNames = {
+            quartz: 'Quartz Click',
+            musicStand: 'Music Stand'
+        };
+        document.getElementById('current-sound').textContent = soundNames[data.value];
+    }
+}
+
+function handleClientDisconnect() {
+    metronome.stop();
+    updateConnectionStatus('disconnected');
+    disconnectTimeout = setTimeout(() => {
+        showPanel('initial-panel');
+        clientConnection = null;
+    }, 2000);
+}
 
 document.getElementById('tempo').addEventListener('input', (e) => {
     if (!isRoomOwner) return;
@@ -401,7 +514,6 @@ document.getElementById('play-pause').addEventListener('click', (e) => {
     });
 });
 
-// Add event listeners for new controls
 document.getElementById('time-signature').addEventListener('change', (e) => {
     if (!isRoomOwner) return;
     const beats = parseInt(e.target.value);
@@ -429,7 +541,6 @@ document.getElementById('accent-first').addEventListener('change', (e) => {
     });
 });
 
-// Add after metronome initialization
 function createBeatIndicators(containerId, count) {
     const container = document.getElementById(containerId);
     container.innerHTML = '';
@@ -447,7 +558,6 @@ metronome.onBeat = (beat) => {
     });
 };
 
-// Replace the minify-controls event listener with this one
 document.getElementById('minify-room').addEventListener('click', (e) => {
     const controls = document.getElementById('room-controls');
     const btn = e.target;
@@ -493,7 +603,6 @@ function updateConnectionStatus(status) {
     }
 }
 
-// ...existing code...
 document.getElementById('sound-select').addEventListener('change', (e) => {
     if (!isRoomOwner) return;
     const soundSet = e.target.value;

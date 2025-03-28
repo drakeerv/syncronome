@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     
     <!-- Primary Meta Tags -->
     <title>Syncronome - Shared Online Metronome</title>
@@ -28,8 +28,11 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div id="error-message" class="error-banner"></div>
+    
     <div id="initial-panel" class="panel">
         <h2>🎵 Syncronome</h2>
+        <p class="browser-info">This app requires a modern browser with WebRTC support.</p>
         <button id="create-room">Host Room</button>
         <div style="margin-top: 20px;">
             <input type="tel" 
